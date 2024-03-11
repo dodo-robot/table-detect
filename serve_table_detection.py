@@ -19,7 +19,8 @@ import pypdfium2 as pdfium
 from uuid import uuid4
 os.environ["RAY_memory_monitor_refresh_ms"] = "0"
 
-serve.start()
+serve.start(detached=True, http_options={"location":"EveryNode"})
+
 app = FastAPI()
 
 class DetectionRequest(BaseModel):
