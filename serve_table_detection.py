@@ -86,9 +86,10 @@ class APIIngress:
             raise HTTPException(status_code=400, detail="Failed to process the content as an image.")
 
         
-
-
-@serve.deployment
+@serve.deployment(
+    ray_actor_options={"num_gpus": 1},
+    autoscaling_config={"min_replicas": 1, "max_replicas": 2},
+)
 class TableDetection:
   def __init__(self, model_bucket, model_name, model_weight, model_config, minio_endpoint, minio_access_key, minio_secret_key):
     import torch
