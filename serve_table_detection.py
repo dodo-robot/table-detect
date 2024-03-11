@@ -92,7 +92,7 @@ class APIIngress:
     autoscaling_config={"min_replicas": 1, "max_replicas": 2},
 )
 class TableDetection:
-  def __init__(self, model_bucket, model_name, model_weight, model_config, minio_endpoint, minio_access_key, minio_secret_key):
+  def __init__(self, model_bucket, model_name, model_weight, conf, minio_endpoint, minio_access_key, minio_secret_key):
     import torch
     import os
     from minio import Minio
@@ -106,7 +106,7 @@ class TableDetection:
                 secret_key = minio_secret_key)
     # Download data of an object.
     weight = f"{model_name}/{model_weight}"
-    conf = f"{model_name}/{model_config}"
+    conf = f"{model_name}/{conf}"
 
     print(weight, conf)
 
@@ -162,7 +162,7 @@ class ComposedArgs(BaseModel):
     model_bucket: str
     model_name: str
     model_weight: str 
-    model_config: str 
+    conf: str 
     minio_endpoint: str 
     minio_access_key: str 
     minio_secret_key: str
@@ -176,7 +176,7 @@ def typed_app_builder(args: ComposedArgs) -> Application:
             args.model_bucket, 
             args.model_name, 
             args.model_weight, 
-            args.model_config, 
+            args.conf, 
             args.minio_endpoint, 
             args.minio_access_key, 
             args.minio_secret_key
