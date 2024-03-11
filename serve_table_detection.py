@@ -104,8 +104,13 @@ class TableDetection:
                 access_key = minio_access_key,
                 secret_key = minio_secret_key)
     # Download data of an object.
-    self.client.fget_object(model_bucket, f"{model_name}/{model_weight}", "weights.pth")
-    self.client.fget_object(model_bucket, f"{model_name}/{model_config}", "config.py")
+    weight = f"{model_name}/{model_weight}"
+    conf = f"{model_name}/{model_config}"
+
+    print(weight, conf)
+
+    self.client.fget_object(model_bucket, weight, "weights.pth")
+    self.client.fget_object(model_bucket, conf, "config.py")
 
     self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     self.table_detector = init_detector(
