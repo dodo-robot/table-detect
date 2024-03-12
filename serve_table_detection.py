@@ -75,6 +75,7 @@ class APIIngress:
         try:
             request_body = await request.json()
             detection_request = DetectionRequest(**request_body)
+            print(detection_request)
             # Download data of an object.
             obj = self.client.get_object(detection_request.tenant, detection_request.filename)
             # Read the content of the object into bytes
@@ -92,7 +93,7 @@ class APIIngress:
     autoscaling_config={"min_replicas": 1, "max_replicas": 2},
 )
 class TableDetection:
-  def __init__(self, model_bucket, model_name, model_weight, conf, minio_endpoint, minio_access_key, minio_secret_key):
+  def __init__(self, bucket, name, weight, conf, minio_endpoint, minio_access_key, minio_secret_key):
     import torch
     import os
     from minio import Minio
@@ -105,13 +106,13 @@ class TableDetection:
                 access_key = minio_access_key,
                 secret_key = minio_secret_key)
     # Download data of an object.
-    weight = f"{model_name}/{model_weight}"
-    conf = f"{model_name}/{conf}"
+    weight = f"{name}/{weight}"
+    conf = f"{name}/{conf}"
 
     print(weight, conf)
 
-    self.client.fget_object(model_bucket, weight, "weights.pth")
-    self.client.fget_object(model_bucket, conf, "config.py")
+    self.client.fget_object(bucket, weight, "weights.pth")
+    self.client.fget_object(bucket, conf, "config.py")
 
     self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     self.table_detector = init_detector(
@@ -159,9 +160,9 @@ from ray.serve import Application
 
 
 class ComposedArgs(BaseModel):
-    model_bucket: str
-    model_name: str
-    model_weight: str 
+    bucket: str
+    name: str
+    weight: str 
     conf: str 
     minio_endpoint: str 
     minio_access_key: str 
@@ -173,9 +174,9 @@ def typed_app_builder(args: ComposedArgs) -> Application:
         args.minio_access_key, 
         args.minio_secret_key,
         TableDetection.bind( 
-            args.model_bucket, 
-            args.model_name, 
-            args.model_weight, 
+            args.bucket, 
+            args.name, 
+            args.weight, 
             args.conf, 
             args.minio_endpoint, 
             args.minio_access_key, 
