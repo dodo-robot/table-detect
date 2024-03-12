@@ -75,6 +75,9 @@ class APIIngress:
         try:
             request_body = await request.json()
             detection_request = DetectionRequest(**request_body)
+            if("s3a" in detection_request.filename):
+                detection_request.filename = detection_request.filename.replace(f"s3a://{detection_request.tenant}/","")
+            
             print(detection_request)
             # Download data of an object.
             obj = self.client.get_object(detection_request.tenant, detection_request.filename)
