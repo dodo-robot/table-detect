@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Request
 import ray
 from ray import serve
 from ray.serve.handle import DeploymentHandle
-from typing import List
+from typing import List, Dict
 from pydantic import BaseModel
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -105,11 +105,19 @@ class APIIngress:
                     partition_filter=ray.data.datasource.FileExtensionFilter("pdf"),
                     filesystem=self.fs3)
             
-            ds = ds.map(self.bytes2img_batch).map(self.run_detection)
-            # Read the content of the object into bytes
-            # Process the PDF bytes
-            detection = ds.flat_map(lambda row:  row['predictions'])
-            return JSONResponse(content=jsonable_encoder(detection))
+            ds = ds.map(self.bytes2img_batch)
+            batch_size = 16
+
+            results = ds.map_batches(
+                TableDetection, 
+                concurrency=(1,6),
+                zero_copy_batch=True,
+                num_gpus=1,
+                batch_size=batch_size
+            )
+            
+            detections = results.flat_map(lambda row:  row['predictions']).collect()
+            return JSONResponse(content=jsonable_encoder(detections))
 
         except Exception as e:
             print(e)
@@ -121,65 +129,70 @@ class APIIngress:
     autoscaling_config={"min_replicas": 1, "max_replicas": 6},
 )
 class TableDetection:
-  def __init__(self, bucket, name, weight, conf, minio_endpoint, minio_access_key, minio_secret_key):
-    import torch
-    import os
-    from minio import Minio
-    from minio.sse import SseCustomerKey
-    from mmdet.apis.inference import init_detector
+    def __init__(self, bucket, name, weight, conf, minio_endpoint, minio_access_key, minio_secret_key):
+        import torch
+        import os
+        from minio import Minio
+        from minio.sse import SseCustomerKey
+        from mmdet.apis.inference import init_detector
+        
+        self.client = Minio(
+                    minio_endpoint,
+                    secure = False,
+                    access_key = minio_access_key,
+                    secret_key = minio_secret_key)
+        # Download data of an object.
+        weight = f"{name}/{weight}"
+        conf = f"{name}/{conf}"
+
+        print(weight, conf)
+
+        self.client.fget_object(bucket, weight, "weights.pth")
+        self.client.fget_object(bucket, conf, "config.py")
+
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.table_detector = init_detector(
+            "config.py",
+            "weights.pth",
+            device=self.device
+        ) 
+
+        self.classes = self.table_detector.CLASSES
     
-    self.client = Minio(
-                minio_endpoint,
-                secure = False,
-                access_key = minio_access_key,
-                secret_key = minio_secret_key)
-    # Download data of an object.
-    weight = f"{name}/{weight}"
-    conf = f"{name}/{conf}"
+    def __call__(self, input_batch: Dict[str, np.ndarray]) -> Dict[str, np.ndarray]:
+        # Define the per-batch inference code in `__call__`.
+        batch = [image for image in input_batch["transformed"]]
+        paths = [path for path in input_batch["path"]]
+        return self.detect(batch, paths, 0.3)
 
-    print(weight, conf)
-
-    self.client.fget_object(bucket, weight, "weights.pth")
-    self.client.fget_object(bucket, conf, "config.py")
-
-    self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    self.table_detector = init_detector(
-        "config.py",
-        "weights.pth",
-        device=self.device
-    ) 
-
-    self.classes = self.table_detector.CLASSES
+    def detect(self, image, path, confidence=0.3):
+            from mmdet.apis.inference import inference_detector
+            # Convert PIL image to bytes
+            raw_results = inference_detector(self.table_detector, image)
+            pp_results = self.process_batch_results(raw_results, path, confidence)
+            return pp_results[0]
     
+    def get_classes(self):
+        return self.classes
+    
+    def process_batch_results(self, results, path, confidence_thr):
+        pp_result = []
 
-  def detect(self, image, path, confidence=0.3):
-        from mmdet.apis.inference import inference_detector
-        # Convert PIL image to bytes
-        raw_results = inference_detector(self.table_detector, image)
-        pp_results = self.process_batch_results(raw_results, path, confidence)
-        return pp_results[0]
-  
-  def get_classes(self):
-      return self.classes
-   
-  def process_batch_results(self, results, path, confidence_thr):
-      pp_result = []
+        for result in results:
+            b_k_result = []
 
-      for result in results:
-          b_k_result = []
+            for label_id, preds_in_label in enumerate(result):
+                for pred_in_label in preds_in_label:
+                    if len(pred_in_label) != 5:
+                        raise ValueError("Each prediction should have 5 elements")
+                    x, y, z, w, confidence = pred_in_label
 
-          for label_id, preds_in_label in enumerate(result):
-              for pred_in_label in preds_in_label:
-                  if len(pred_in_label) != 5:
-                      raise ValueError("Each prediction should have 5 elements")
-                  x, y, z, w, confidence = pred_in_label
+                    if confidence > confidence_thr:
+                        b_k_result.append(DetectTableResult(path=path,bbox=[x,y,z,w],label=self.classes[label_id],confidence=confidence).__dict__)
 
-                  if confidence > confidence_thr:
-                      b_k_result.append(DetectTableResult(path=path,bbox=[x,y,z,w],label=self.classes[label_id],confidence=confidence).__dict__)
+            pp_result.append(b_k_result)
 
-          pp_result.append(b_k_result)
-
-      return pp_result
+        return pp_result
 
 
 from pydantic import BaseModel
