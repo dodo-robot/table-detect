@@ -77,7 +77,7 @@ def perform_table_detection(data):
         img = item['bytes']
         # # Open the PDF document (assuming it's one page) 
         handle = serve.get_app_handle("table_detect")
-        detected = handle.detect.remote(img,).result()
+        detected = handle.detect.remote(img).result()
         # ray.get(table_detector.detect.remote(image, confidence=0.3))
         res = {
             "path": path,

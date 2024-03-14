@@ -119,17 +119,17 @@ class TableDetection:
     self.classes = self.table_detector.CLASSES
     
 
-  def detect(self, image, path, confidence=0.3):
+  def detect(self, image, confidence=0.3):
         from mmdet.apis.inference import inference_detector
         # Convert PIL image to bytes
         raw_results = inference_detector(self.table_detector, image)
-        pp_results = self.process_batch_results(raw_results, path, confidence)
+        pp_results = self.process_batch_results(raw_results, confidence)
         return pp_results[0]
   
   def get_classes(self):
       return self.classes
    
-  def process_batch_results(self, results, path, confidence_thr):
+  def process_batch_results(self, results, confidence_thr):
       pp_result = []
 
       for result in results:
@@ -142,7 +142,7 @@ class TableDetection:
                   x, y, z, w, confidence = pred_in_label
 
                   if confidence > confidence_thr:
-                      b_k_result.append(DetectTableResult(path=path,bbox=[x,y,z,w],label=self.classes[label_id],confidence=confidence).__dict__)
+                      b_k_result.append(DetectTableResult(path="",bbox=[x,y,z,w],label=self.classes[label_id],confidence=confidence).__dict__)
 
           pp_result.append(b_k_result)
 
