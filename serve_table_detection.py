@@ -16,6 +16,8 @@ import os
 from minio import Minio
 from minio.sse import SseCustomerKey 
 import pypdfium2 as pdfium
+import cv2
+import pyarrow.fs
 from uuid import uuid4
 os.environ["RAY_memory_monitor_refresh_ms"] = "0"
 
@@ -45,6 +47,12 @@ class APIIngress:
             secure = False,
             access_key = minio_access_key,
             secret_key = minio_secret_key)
+
+        self.fs3 = pyarrow.fs.S3FileSystem(access_key=minio_access_key,
+                    secret_key=minio_secret_key,
+                    endpoint_override=minio_endpoint,
+                    scheme='http')
+
         
         self.handle: DeploymentHandle = object_detection_handle.options(
             use_new_handle_api=True,
@@ -64,9 +72,22 @@ class APIIngress:
         return jpeg_bytes.getbuffer().tobytes()
 
     def bytes2img(self, file_bytes):
-        import cv2
         nparr = np.frombuffer(file_bytes, np.uint8)
         return [cv2.imdecode(nparr, cv2.IMREAD_COLOR)]
+    
+    def bytes2img_batch(self, file_bytes):
+        nparr = np.frombuffer(self.pdf_bytes_to_jpeg(file_bytes['bytes']), np.uint8)
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        # You may need to further process the image data here if necessary
+        # For example, converting it to a different format or encoding
+        return {
+            "path": file_bytes["path"],
+            "transformed": image
+        }
+
+    async def run_detection(self, file_bytes):
+        return await self.handle.detect.remote(file_bytes['transformed'], file_bytes['path'])
+
     
     @app.post(
         "/detect"
@@ -76,14 +97,17 @@ class APIIngress:
             request_body = await request.json()
             detection_request = DetectionRequest(**request_body)
             if("s3a" in detection_request.filename):
-                detection_request.filename = detection_request.filename.replace(f"s3a://{detection_request.tenant}/","")
-            
+                detection_request.filename = detection_request.filename.replace(f"s3a://{detection_request.tenant}/","") 
             print(detection_request)
             # Download data of an object.
-            obj = self.client.get_object(detection_request.tenant, detection_request.filename)
+            ds = ray.data.read_binary_files(detection_request.filename,
+                    include_paths=True,
+                    partition_filter=ray.data.datasource.FileExtensionFilter("pdf"),
+                    filesystem=self.fs3)
+            ds = ds.map(self.bytes2img_batch).map(self.run_detection)
             # Read the content of the object into bytes
             # Process the PDF bytes
-            detection = await self.handle.detect.remote(self.bytes2img(self.pdf_bytes_to_jpeg(obj.read())), detection_request.filename)
+            detection = ds.flat_map(lambda row:  row['predictions'])
             return JSONResponse(content=jsonable_encoder(detection))
 
         except Exception as e:
