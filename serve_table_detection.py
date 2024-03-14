@@ -96,11 +96,13 @@ class APIIngress:
         try:
             request_body = await request.json()
             detection_request = DetectionRequest(**request_body)
-            if("s3a" not in detection_request.filename):
-                detection_request.filename = detection_request.filename.replace(f"s3a://{detection_request.tenant}/","") 
-            print(detection_request)
+
+            folder = detection_request.filename
+            if("s3a" not in folder):
+                folder = folder.replace(f"s3a://{detection_request.tenant}/","") 
+            print(folder)
             # Download data of an object.
-            ds = ray.data.read_binary_files(detection_request.filename,
+            ds = ray.data.read_binary_files(folder,
                     include_paths=True,
                     partition_filter=ray.data.datasource.FileExtensionFilter("pdf"),
                     filesystem=self.fs3)
