@@ -98,8 +98,9 @@ class APIIngress:
             detection_request = DetectionRequest(**request_body)
 
             folder = detection_request.filename
-            if("s3a" not in folder):
-                folder = f"s3a://{detection_request.tenant}/{detection_request.filename}"
+            if("s3" not in folder and detection_request.tenant not in folder):
+                folder = f"s3://{detection_request.tenant}/{detection_request.filename}"
+ 
             print(folder)
             # Download data of an object.
             ds = ray.data.read_binary_files(folder,
