@@ -71,11 +71,11 @@ class APIIngress:
     @app.post(
         "/detect"
     )
-    async def detect(self, image, path):
-        try: 
+    async def detect(self, bytes):
+        try:
             # Read the content of the object into bytes
             # Process the PDF bytes
-            detection = await self.handle.detect.remote(image, path)
+            detection = await self.handle.detect.remote(self.bytes2img(self.pdf_bytes_to_jpeg(bytes)))
             return JSONResponse(content=jsonable_encoder(detection))
 
         except Exception as e:

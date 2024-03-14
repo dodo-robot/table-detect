@@ -33,7 +33,7 @@ def bytes2img(file_bytes):
     # For example, converting it to a different format or encoding
     return {
         "path": file_bytes["path"],
-        "transformed": image
+        "transformed": [image]
     }
 
 def pdf_bytes_to_jpeg(pdf_bytes):
@@ -74,10 +74,10 @@ def load_images_from_s3(bucket_url):
 def perform_table_detection(data):
     for item in data.iter_rows():
         path = item['path']
-        img = item['transformed']
+        img = item['bytes']
         # # Open the PDF document (assuming it's one page) 
         handle = serve.get_app_handle("table_detect")
-        detected = ray.get(handle.detect.remote(img, path))
+        detected = handle.detect.remote(img,).result()
         # ray.get(table_detector.detect.remote(image, confidence=0.3))
         res = {
             "path": path,
@@ -99,7 +99,6 @@ def perform_table_detection_kafka(msg):
     data = json.loads(msg_value)
     bucket_url = data.get('documentUri')
     ds = load_images_from_s3(data.get('tenant') + "/" + bucket_url)
-    ds = ds.map(bytes2img)
     ray.remote(perform_table_detection).remote(ds)
 
 # Kafka consumer configuration
