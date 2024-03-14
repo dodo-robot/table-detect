@@ -96,7 +96,7 @@ class APIIngress:
         try:
             request_body = await request.json()
             detection_request = DetectionRequest(**request_body)
-            if("s3a" in detection_request.filename):
+            if("s3a" not in detection_request.filename):
                 detection_request.filename = detection_request.filename.replace(f"s3a://{detection_request.tenant}/","") 
             print(detection_request)
             # Download data of an object.
@@ -104,6 +104,7 @@ class APIIngress:
                     include_paths=True,
                     partition_filter=ray.data.datasource.FileExtensionFilter("pdf"),
                     filesystem=self.fs3)
+            
             ds = ds.map(self.bytes2img_batch).map(self.run_detection)
             # Read the content of the object into bytes
             # Process the PDF bytes
