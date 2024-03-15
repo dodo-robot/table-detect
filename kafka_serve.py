@@ -84,7 +84,7 @@ def perform_table_detection(data, created_at):
             res = {
                 "path": path,
                 "tables": tables,
-                "created_at": formatted_date
+                "created_at": created_at
             }
             print(res)
             ray.get(producer.produce.remote(res))
@@ -103,10 +103,9 @@ def perform_table_detection_kafka(msg):
     data = json.loads(msg_value)
     bucket_url = data.get('documentUri')
     created_at = data.get('createdAt')
-    date = datetime.fromtimestamp(created_at, tz=timezone.utc) 
-
+    
     ds = load_images_from_s3(data.get('tenant') + "/" + bucket_url)
-    ray.remote(perform_table_detection).remote(ds, date)
+    ray.remote(perform_table_detection).remote(ds, created_at)
 
 # Kafka consumer configuration
 
