@@ -93,6 +93,7 @@ def perform_table_detection(data, created_at):
 
 
 import json
+from datetime import datetime, timezone
 # Function to perform table detection on a Kafka message
 def perform_table_detection_kafka(msg):
     # Extract the bucket_url from the Kafka message
@@ -100,9 +101,11 @@ def perform_table_detection_kafka(msg):
     # Parse the JSON string to extract the bucket_url
     data = json.loads(msg_value)
     bucket_url = data.get('documentUri')
-    createdAt = data.get('createdAt')
+    created_at = data.get('createdAt')
+    date = datetime.fromtimestamp(created_at, tz=timezone.utc)
+
     ds = load_images_from_s3(data.get('tenant') + "/" + bucket_url)
-    ray.remote(perform_table_detection).remote(ds, createdAt)
+    ray.remote(perform_table_detection).remote(ds, date)
 
 # Kafka consumer configuration
 
