@@ -11,6 +11,14 @@ def delivery_report(err, msg):
 from typing import List
 
 from pydantic import BaseModel
+from datetime import datetime
+
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.strftime('%Y-%m-%dT%H:%M:%S.%fZ')  # Format datetime objects as strings
+        return json.JSONEncoder.default(self, obj)
+
 
 class DetectTableResult(BaseModel):
     bbox: List[float]
@@ -29,9 +37,10 @@ class RayProducer:
     self.sink = sink
 
   def produce(self, data):
-    self.producer.produce(self.sink, json.dumps(data).encode('utf-8'), callback=delivery_report)
+    self.producer.produce(self.sink, json.dumps(data, cls=DateTimeEncoder).encode('utf-8'), callback=delivery_report)
     self.producer.poll(0)
 
   def destroy(self):
     self.producer.flush(30)
 
+  
