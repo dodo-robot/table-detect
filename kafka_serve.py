@@ -73,6 +73,8 @@ def load_images_from_s3(bucket_url):
     return ds
 
 def perform_table_detection(data, created_at):
+    created_at_datetime = datetime.fromtimestamp(int(created_at) / 1000)
+    formatted_date = created_at_datetime.strftime('%Y-%m-%dT%H:%M:%S.%fZ') 
     for item in data.iter_rows():
         path = item['path']
         img = item['bytes']
@@ -80,10 +82,11 @@ def perform_table_detection(data, created_at):
         handle = serve.get_app_handle("table_detect")
         detected: JSONResponse = handle.detect.remote(img).result()
         if detected.status_code == 200:
+            tables = json.loads(detected.body.decode('utf-8'))
             res = {
                 "path": path,
-                "tables": detected.body.decode('utf-8'),
-                "created_at": created_at
+                "tables": tables,
+                "created_at": formatted_date
             }
             print(res)
             ray.get(producer.produce.remote(res))
@@ -103,10 +106,10 @@ def perform_table_detection_kafka(msg):
     bucket_url = data.get('documentUri')
     created_at = data.get('createdAt')
     date = datetime.fromtimestamp(created_at, tz=timezone.utc)
-    formatted_date = date.strftime('%Y-%m-%dT%H:%M:%S.%fZ') 
+    
 
     ds = load_images_from_s3(data.get('tenant') + "/" + bucket_url)
-    ray.remote(perform_table_detection).remote(ds, formatted_date)
+    ray.remote(perform_table_detection).remote(ds, date)
 
 # Kafka consumer configuration
 
