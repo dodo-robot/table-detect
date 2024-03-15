@@ -2,15 +2,14 @@ import torch
 from PIL import Image
 import numpy as np
 from io import BytesIO
-from fastapi.responses import Response
+from fastapi.responses import Response, JSONResponse
 from fastapi import FastAPI, HTTPException, Request
 import ray
 from ray import serve
 from ray.serve.handle import DeploymentHandle
 from typing import List
 from pydantic import BaseModel
-from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder 
 import torch
 import os
 from minio import Minio

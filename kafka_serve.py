@@ -10,6 +10,7 @@ from ray import serve
 import pypdfium2 as pdfium
 from io import BytesIO
 
+from fastapi.responses import Response, JSONResponse
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 ray.init()
@@ -71,20 +72,21 @@ def load_images_from_s3(bucket_url):
     
     return ds
 
-def perform_table_detection(data):
+def perform_table_detection(data, created_at):
     for item in data.iter_rows():
         path = item['path']
         img = item['bytes']
         # # Open the PDF document (assuming it's one page) 
         handle = serve.get_app_handle("table_detect")
-        detected = handle.detect.remote(img).result()
-        # ray.get(table_detector.detect.remote(image, confidence=0.3))
-        res = {
-            "path": path,
-            "tables": detected,
-        }
-
-        ray.get(producer.produce.remote(res))
+        detected: JSONResponse = handle.detect.remote(img).result()
+        if detected.status_code == 200:
+            res = {
+                "path": path,
+                "tables": detected.body.decode('utf-8'),
+                "created_at": created_at
+            }
+            print(res)
+            ray.get(producer.produce.remote(res))
 
     return res
 
@@ -98,8 +100,9 @@ def perform_table_detection_kafka(msg):
     # Parse the JSON string to extract the bucket_url
     data = json.loads(msg_value)
     bucket_url = data.get('documentUri')
+    createdAt = data.get('createdAt')
     ds = load_images_from_s3(data.get('tenant') + "/" + bucket_url)
-    ray.remote(perform_table_detection).remote(ds)
+    ray.remote(perform_table_detection).remote(ds, createdAt)
 
 # Kafka consumer configuration
 
