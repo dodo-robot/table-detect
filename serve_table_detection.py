@@ -9,13 +9,16 @@ from ray import serve
 from ray.serve.handle import DeploymentHandle
 from typing import List
 from pydantic import BaseModel
-from fastapi.encoders import jsonable_encoder 
+from fastapi.encoders import jsonable_encoder
 import torch
 import os
 from minio import Minio
 from minio.sse import SseCustomerKey 
 import pypdfium2 as pdfium
 from uuid import uuid4
+from pydantic import BaseModel
+from ray.serve import Application
+
 os.environ["RAY_memory_monitor_refresh_ms"] = "0"
 
 serve.start(detached=True, http_options={"location":"EveryNode"})
@@ -35,7 +38,7 @@ class DetectTableResult(BaseModel):
     class Config:
         arbitrary_types_allowed = True
 
-@serve.deployment(num_replicas=1)
+@serve.deployment(autoscaling_config={"min_replicas": 1, "max_replicas": 10})
 @serve.ingress(app)
 class APIIngress:
     def __init__(self, minio_endpoint, minio_access_key, minio_secret_key, object_detection_handle) -> None: 
@@ -103,8 +106,6 @@ class TableDetection:
     weight = f"{name}/{weight}"
     conf = f"{name}/{conf}"
 
-    print(weight, conf)
-
     self.client.fget_object(bucket, weight, "weights.pth")
     self.client.fget_object(bucket, conf, "config.py")
 
@@ -148,9 +149,7 @@ class TableDetection:
       return pp_result
 
 
-from pydantic import BaseModel
 
-from ray.serve import Application
 
 
 class ComposedArgs(BaseModel):

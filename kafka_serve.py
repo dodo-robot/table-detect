@@ -72,7 +72,8 @@ def load_images_from_s3(bucket_url):
     
     return ds
 
-def perform_table_detection(data, created_at):
+def perform_table_detection(data, created_at): 
+    result = []
     for item in data.iter_rows():
         path = item['path']
         img = item['bytes']
@@ -86,10 +87,9 @@ def perform_table_detection(data, created_at):
                 "tables": tables,
                 "created_at": created_at
             }
-            print(res)
-            ray.get(producer.produce.remote(res))
-
-    return res
+            result.append(res)
+    
+    ray.get(producer.produce.remote({"arrayTables": result})) 
 
 
 
@@ -103,9 +103,13 @@ def perform_table_detection_kafka(msg):
     data = json.loads(msg_value)
     bucket_url = data.get('documentUri')
     created_at = data.get('createdAt')
-    
+    created_at_datetime = datetime.fromtimestamp(int(created_at)/1000, tz=timezone.utc)  # Convert the Unix timestamp to a datetime object
+    formatted_created_at = created_at_datetime.strftime('%Y-%m-%dT%H:%M:%S.%fZ')  # Format the datetime object as desired
     ds = load_images_from_s3(data.get('tenant') + "/" + bucket_url)
-    ray.remote(perform_table_detection).remote(ds, created_at)
+    ray.remote(perform_table_detection).remote(ds, formatted_created_at)
+ 
+    
+    
 
 # Kafka consumer configuration
 
