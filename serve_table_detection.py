@@ -135,9 +135,12 @@ class TableDetection:
     async def detect(self, images, confidence=0.3):
         from mmdet.apis.inference import inference_detector
         # Convert PIL image to bytes
-        raw_results = inference_detector(self.table_detector, images)
-        pp_results = self.process_batch_results(raw_results, confidence)
-        return pp_results
+        results = []
+        for image in images:
+            raw_results = inference_detector(self.table_detector, image)
+            pp_results = self.process_batch_results(raw_results, confidence)
+            results.append(pp_results)
+        return results
     
     def get_classes(self):
         return self.classes

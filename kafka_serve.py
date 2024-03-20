@@ -26,29 +26,7 @@ kafka = {
 }
 
 producer = RayProducer.options(name='producer').remote(kafka['producer'], 'tables')
-
-def bytes2img(file_bytes):
-    nparr = np.frombuffer(pdf_bytes_to_jpeg(file_bytes['bytes']), np.uint8)
-    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    # You may need to further process the image data here if necessary
-    # For example, converting it to a different format or encoding
-    return {
-        "path": file_bytes["path"],
-        "transformed": [image]
-    }
-
-def pdf_bytes_to_jpeg(pdf_bytes):
-    pdf = pdfium.PdfDocument(pdf_bytes)
-    page = pdf[0]  # load a page
-    bitmap = page.render(
-        scale=1,
-        rotation=0,  
-    )
-    pil_image = bitmap.to_pil()
-    jpeg_bytes = BytesIO()
-    pil_image.save(jpeg_bytes, format="JPEG")
-    jpeg_bytes.seek(0)
-    return jpeg_bytes.getbuffer().tobytes()
+ 
 
 def load_images_from_s3(bucket_url):
     minio_endpoint = 'http://minio.triton.svc.cluster.local:9000'
