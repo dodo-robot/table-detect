@@ -78,19 +78,20 @@ class APIIngress:
         
     
     @serve.batch(max_batch_size=10, batch_wait_timeout_s=0.1)
-    async def batch_handler(self, images) -> List[JSONResponse]:
-        response_batch = []
+    async def batch_handler(self, images) -> JSONResponse:
+        batch = []
         for bytes in images:
-            try:
-                # Read the content of the object into bytes
-                # Process the PDF bytes
-                detection = await self.handle.detect.remote(self.bytes2img(self.pdf_bytes_to_jpeg(bytes)))
-                response_batch.append(JSONResponse(content=jsonable_encoder(detection))) 
-            except Exception as e:
-                print(e)
-                raise HTTPException(status_code=400, detail="Failed to process the content as an image.")
-
-        return response_batch
+            batch.append(self.bytes2img(self.pdf_bytes_to_jpeg(bytes)))
+            
+        try:
+            # Read the content of the object into bytes
+            # Process the PDF bytes
+            detection = await self.handle.detect.remote(batch)
+            return JSONResponse(content=jsonable_encoder(detection)) 
+        except Exception as e:
+            print(e)
+            raise HTTPException(status_code=400, detail="Failed to process the content as an image.")
+        
 
     def update_batch_params(self, max_batch_size, batch_wait_timeout_s):
         self.batch_handler.set_max_batch_size(max_batch_size)
@@ -131,13 +132,12 @@ class TableDetection:
 
         self.classes = self.table_detector.CLASSES 
     
-    @serve.batch(max_batch_size=8, batch_wait_timeout_s=0.1)
     async def detect(self, images, confidence=0.3):
-            from mmdet.apis.inference import inference_detector
-            # Convert PIL image to bytes
-            raw_results = inference_detector(self.table_detector, images)
-            pp_results = self.process_batch_results(raw_results, confidence)
-            return pp_results
+        from mmdet.apis.inference import inference_detector
+        # Convert PIL image to bytes
+        raw_results = inference_detector(self.table_detector, images)
+        pp_results = self.process_batch_results(raw_results, confidence)
+        return pp_results
     
     def get_classes(self):
         return self.classes
