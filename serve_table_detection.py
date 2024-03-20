@@ -74,15 +74,28 @@ class APIIngress:
         "/detect"
     )
     async def detect(self, bytes):
-        try:
-            # Read the content of the object into bytes
-            # Process the PDF bytes
-            detection = await self.handle.detect.remote(self.bytes2img(self.pdf_bytes_to_jpeg(bytes)))
-            return JSONResponse(content=jsonable_encoder(detection))
+        return await self.batch_handler(bytes)
+        
+    
+    @serve.batch(max_batch_size=10, batch_wait_timeout_s=0.1)
+    async def batch_handler(self, images) -> List[JSONResponse]:
+        response_batch = []
+        for bytes in images:
+            try:
+                # Read the content of the object into bytes
+                # Process the PDF bytes
+                detection = await self.handle.detect.remote(self.bytes2img(self.pdf_bytes_to_jpeg(bytes)))
+                response_batch.append(JSONResponse(content=jsonable_encoder(detection))) 
+            except Exception as e:
+                print(e)
+                raise HTTPException(status_code=400, detail="Failed to process the content as an image.")
 
-        except Exception as e:
-            print(e)
-            raise HTTPException(status_code=400, detail="Failed to process the content as an image.")
+        return response_batch
+
+    def update_batch_params(self, max_batch_size, batch_wait_timeout_s):
+        self.batch_handler.set_max_batch_size(max_batch_size)
+        self.batch_handler.set_batch_wait_timeout_s(batch_wait_timeout_s)
+
 
         
 @serve.deployment(
@@ -116,7 +129,7 @@ class TableDetection:
             device=self.device
         ) 
 
-        self.classes = self.table_detector.CLASSES
+        self.classes = self.table_detector.CLASSES 
     
     @serve.batch(max_batch_size=8, batch_wait_timeout_s=0.1)
     async def detect(self, images, confidence=0.3):
