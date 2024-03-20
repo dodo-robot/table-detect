@@ -78,16 +78,19 @@ class APIIngress:
         
     
     @serve.batch(max_batch_size=10, batch_wait_timeout_s=0.1)
-    async def batch_handler(self, images) -> JSONResponse:
+    async def batch_handler(self, images) -> List[JSONResponse]:
         batch = []
+        results = []
         for bytes in images:
             batch.append(self.bytes2img(self.pdf_bytes_to_jpeg(bytes)))
             
         try:
             # Read the content of the object into bytes
             # Process the PDF bytes
-            detection = await self.handle.detect.remote(batch)
-            return JSONResponse(content=jsonable_encoder(detection)) 
+            detections = await self.handle.detect.remote(batch)
+            for detection in detections:
+                results.append(JSONResponse(content=jsonable_encoder(detection)))
+            return results
         except Exception as e:
             print(e)
             raise HTTPException(status_code=400, detail="Failed to process the content as an image.")
