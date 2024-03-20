@@ -90,63 +90,63 @@ class APIIngress:
     autoscaling_config={"min_replicas": 1, "max_replicas": 6},
 )
 class TableDetection:
-  def __init__(self, bucket, name, weight, conf, minio_endpoint, minio_access_key, minio_secret_key):
-    import torch
-    import os
-    from minio import Minio
-    from minio.sse import SseCustomerKey
-    from mmdet.apis.inference import init_detector
+    def __init__(self, bucket, name, weight, conf, minio_endpoint, minio_access_key, minio_secret_key):
+        import torch
+        import os
+        from minio import Minio
+        from minio.sse import SseCustomerKey
+        from mmdet.apis.inference import init_detector
+        
+        self.client = Minio(
+                    minio_endpoint,
+                    secure = False,
+                    access_key = minio_access_key,
+                    secret_key = minio_secret_key)
+        # Download data of an object.
+        weight = f"{name}/{weight}"
+        conf = f"{name}/{conf}"
+
+        self.client.fget_object(bucket, weight, "weights.pth")
+        self.client.fget_object(bucket, conf, "config.py")
+
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.table_detector = init_detector(
+            "config.py",
+            "weights.pth",
+            device=self.device
+        ) 
+
+        self.classes = self.table_detector.CLASSES
     
-    self.client = Minio(
-                minio_endpoint,
-                secure = False,
-                access_key = minio_access_key,
-                secret_key = minio_secret_key)
-    # Download data of an object.
-    weight = f"{name}/{weight}"
-    conf = f"{name}/{conf}"
-
-    self.client.fget_object(bucket, weight, "weights.pth")
-    self.client.fget_object(bucket, conf, "config.py")
-
-    self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    self.table_detector = init_detector(
-        "config.py",
-        "weights.pth",
-        device=self.device
-    ) 
-
-    self.classes = self.table_detector.CLASSES
+    @serve.batch(max_batch_size=8, batch_wait_timeout_s=0.1)
+    async def detect(self, images, confidence=0.3):
+            from mmdet.apis.inference import inference_detector
+            # Convert PIL image to bytes
+            raw_results = inference_detector(self.table_detector, images)
+            pp_results = self.process_batch_results(raw_results, confidence)
+            return pp_results
     
+    def get_classes(self):
+        return self.classes
+    
+    def process_batch_results(self, results, confidence_thr):
+        pp_result = []
 
-  def detect(self, image, confidence=0.3):
-        from mmdet.apis.inference import inference_detector
-        # Convert PIL image to bytes
-        raw_results = inference_detector(self.table_detector, image)
-        pp_results = self.process_batch_results(raw_results, confidence)
-        return pp_results[0]
-  
-  def get_classes(self):
-      return self.classes
-   
-  def process_batch_results(self, results, confidence_thr):
-      pp_result = []
+        for result in results:
+            b_k_result = []
 
-      for result in results:
-          b_k_result = []
+            for label_id, preds_in_label in enumerate(result):
+                for pred_in_label in preds_in_label:
+                    if len(pred_in_label) != 5:
+                        raise ValueError("Each prediction should have 5 elements")
+                    x, y, z, w, confidence = pred_in_label
 
-          for label_id, preds_in_label in enumerate(result):
-              for pred_in_label in preds_in_label:
-                  if len(pred_in_label) != 5:
-                      raise ValueError("Each prediction should have 5 elements")
-                  x, y, z, w, confidence = pred_in_label
+                    if confidence > confidence_thr:
+                        b_k_result.append(DetectTableResult(path="",bbox=[x,y,z,w],label=self.classes[label_id],confidence=confidence).__dict__)
 
-                  if confidence > confidence_thr:
-                      b_k_result.append(DetectTableResult(path="",bbox=[x,y,z,w],label=self.classes[label_id],confidence=confidence).__dict__)
+            pp_result.append(b_k_result)
 
-          pp_result.append(b_k_result)
-
-      return pp_result
+        return pp_result
 
 
 

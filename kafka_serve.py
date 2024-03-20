@@ -72,14 +72,18 @@ def load_images_from_s3(bucket_url):
     
     return ds
 
-def perform_table_detection(data, created_at): 
+
+
+@ray.remote(num_cpus=1)
+def perform_table_detection(data, created_at):
     result = []
+    handle = serve.get_app_handle("table_detect") 
+    
     for item in data.iter_rows():
         path = item['path']
         img = item['bytes']
-        # # Open the PDF document (assuming it's one page) 
-        handle = serve.get_app_handle("table_detect")
-        detected: JSONResponse = handle.detect.remote(img).result()
+
+        detected = handle.detect.remote(img).result()
         if detected.status_code == 200:
             tables = json.loads(detected.body.decode('utf-8'))
             res = {
@@ -87,38 +91,27 @@ def perform_table_detection(data, created_at):
                 "tables": tables,
                 "created_at": created_at
             }
-            result.append(res)
+            result.append(res) 
     
-    ray.get(producer.produce.remote({"arrayTables": result})) 
+    ray.get(producer.produce.remote({"arrayTables": result}))
+    print("sent tables")
+    return result
 
 
 
 import json
-from datetime import datetime, timezone
-# Function to perform table detection on a Kafka message
-def perform_table_detection_kafka(msg):
-    # Extract the bucket_url from the Kafka message
-    msg_value = msg.value().decode('utf-8')
-    # Parse the JSON string to extract the bucket_url
-    data = json.loads(msg_value)
-    bucket_url = data.get('documentUri')
-    created_at = data.get('createdAt')
-    created_at_datetime = datetime.fromtimestamp(int(created_at)/1000, tz=timezone.utc)  # Convert the Unix timestamp to a datetime object
-    formatted_created_at = created_at_datetime.strftime('%Y-%m-%dT%H:%M:%S.%fZ')  # Format the datetime object as desired
-    ds = load_images_from_s3(data.get('tenant') + "/" + bucket_url)
-    ray.remote(perform_table_detection).remote(ds, formatted_created_at)
- 
-    
-    
-
-# Kafka consumer configuration
-
+from datetime import datetime, timezone 
 from confluent_kafka import Consumer, KafkaError
 # Create a Kafka consumer
 consumer = Consumer(kafka["consumer"])
 consumer.subscribe(['splitted_files'])
 
 # Continuously consume and process Kafka messages
+
+result_refs = [] 
+MAX_NUM_RUNNING_TASKS = 6
+NUM_TASKS = 0
+
 while True:
     msg = consumer.poll(1.0)
 
@@ -131,4 +124,18 @@ while True:
             print('Error while consuming message: {}'.format(msg.error()))
     else:
         print('Received message: {}'.format(msg.value()))
-        perform_table_detection_kafka(msg)  # Process the message
+        # Extract the bucket_url from the Kafka message
+        msg_value = msg.value().decode('utf-8')
+        # Parse the JSON string to extract the bucket_url
+        data = json.loads(msg_value)
+        bucket_url = data.get('documentUri')
+        created_at = data.get('createdAt')
+        created_at_datetime = datetime.fromtimestamp(int(created_at)/1000, tz=timezone.utc)  # Convert the Unix timestamp to a datetime object
+        formatted_created_at = created_at_datetime.strftime('%Y-%m-%dT%H:%M:%S.%fZ')  # Format the datetime object as desired
+        ds = load_images_from_s3(data.get('tenant') + "/" + bucket_url)
+        result_refs.append(perform_table_detection.remote(ds, formatted_created_at))
+        
+        if len(result_refs) >= MAX_NUM_RUNNING_TASKS:
+            ready_refs, result_refs = ray.wait(result_refs, num_returns=1) 
+ 
+
